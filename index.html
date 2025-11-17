@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Blast File — Supabase Cloud</title>
+  <style>
+    :root{
+      --bg:#0a0f1f; --panel:#0f162e; --accent:#00e5ff; --accent2:#a300ff;
+      --text:#e6f7ff; --muted:#8aa4b6; --danger:#ff3b3b; --success:#37ff8b;
+      --glow: 0 0 12px rgba(0,229,255,0.6), 0 0 24px rgba(163,0,255,0.35);
+    }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:Inter,system-ui; background:var(--bg); color:var(--text);}
+    h1{padding:16px; margin:0; background:#0f162e; border-bottom:1px solid rgba(0,229,255,.25);}
+    .hidden{display:none}
+    .app{display:grid; grid-template-columns:280px 1fr; height:calc(100vh - 60px);}
+    .sidebar{background:#0f162e; padding:16px; border-right:1px solid rgba(0,229,255,.25); overflow-y:auto;}
+    .editor{padding:20px; display:flex; flex-direction:column;}
+    .input{padding:8px; border-radius:8px; border:1px solid rgba(0,229,255,.25); background:#0b1226; color:var(--text);}
+    textarea{flex:1; margin-top:10px; background:#0b1226; color:var(--text); border-radius:8px; border:1px solid rgba(0,229,255,.25); font-family:monospace;}
+    .btn{background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#001018; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; margin-top:6px;}
+    .btn.ghost{background:transparent; color:var(--accent); border:1px solid rgba(0,229,255,.45);}
+    .file-item{padding:6px; border:1px solid rgba(0,229,255,.25); margin:4px 0; cursor:pointer; border-radius:6px;}
+    .file-item.active{background:rgba(0,229,255,0.2);}
+    #loginPanel{max-width:400px; margin:80px auto; padding:20px; background:#0f162e; border:1px solid rgba(0,229,255,.25); border-radius:12px; text-align:center;}
+  </style>
+</head>
+<body>
+  <h1>Blast File — Supabase Cloud</h1>
+
+  <!-- Login -->
+  <div id="loginPanel">
+    <p>Enter password to unlock:</p>
+    <input id="password" type="password" class="input"/>
+    <button id="loginBtn" class="btn">Unlock</button>
+    <p id="loginMsg"></p>
+  </div>
+
+  <!-- App -->
+  <div id="appPanel" class="hidden">
+    <div class="app">
+      <aside class="sidebar">
+        <h2>Files</h2>
+        <input id="newFileName" class="input" placeholder="New file name"/>
+        <button id="createFileBtn" class="btn ghost">Create</button>
+        <div id="fileList"></div>
+      </aside>
+      <main class="editor">
+        <input id="currentFileName" class="input" placeholder="File name"/>
+        <textarea id="editor" placeholder="Start typing..."></textarea>
+        <div>
+          <button id="saveBtn" class="btn">Save</button>
+          <button id="deleteBtn" class="btn ghost">Delete</button>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+    // Supabase credentials
+    const supabaseUrl = "https://mawcnbndzluklbivjgmw.supabase.co";
+    const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hd2NuYm5kemx1a2xiaXZqZ213Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzOTMyMDIsImV4cCI6MjA3ODk2OTIwMn0.Nmxhip9gJwn9ToUezUyauML_xA4pizmvWvYsHDh-l38";
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Password gate
+    const PASSWORD = "Qas1m@";
+    document.getElementById("loginBtn").onclick = () => {
+      const pw = document.getElementById("password").value;
+      if(pw === PASSWORD){
+        document.getElementById("loginPanel").classList.add("hidden");
+        document.getElementById("appPanel").classList.remove("hidden");
+        loadFiles();
+        subscribeChanges();
+      } else {
+        document.getElementById("loginMsg").innerText = "Wrong password!";
+      }
+    };
+
+    // File operations
+    async function loadFiles(){
+      let { data } = await supabase.from("files").select("*");
+      const list = document.getElementById("fileList");
+      list.innerHTML = "";
+      data.forEach(f=>{
+        const div = document.createElement("div");
+        div.className="file-item";
+        div.innerText=f.id;
+        div.onclick=()=>openFile(f);
+        list.appendChild(div);
+      });
+    }
+
+    async function saveFile(){
+      const name = document.getElementById("currentFileName").value;
+      const content = document.getElementById("editor").value;
+      if(!name) return;
+      await supabase.from("files").upsert({ id:name, content, updated_at:new Date() });
+      loadFiles();
+    }
+
+    async function deleteFile(){
+      const name = document.getElementById("currentFileName").value;
+      if(!name) return;
+      await supabase.from("files").delete().eq("id",name);
+      document.getElementById("editor").value="";
+      loadFiles();
+    }
+
+    function openFile(f){
+      document.getElementById("currentFileName").value=f.id;
+      document.getElementById("editor").value=f.content||"";
+      document.querySelectorAll(".file-item").forEach(el=>{
+        el.classList.remove("active");
+        if(el.innerText===f.id) el.classList.add("active");
+      });
+    }
+
+    function subscribeChanges(){
+      supabase.channel("files")
+        .on("postgres_changes",{event:"*",schema:"public",table:"files"},payload=>{
+          console.log("Change:",payload);
+          loadFiles();
+        }).subscribe();
+    }
+
+    // Button bindings
+    document.getElementById("saveBtn").onclick=saveFile;
+    document.getElementById("deleteBtn").onclick=deleteFile;
+    document.getElementById("createFileBtn").onclick=()=>{
+      const name=document.getElementById("newFileName").value;
+      if(name) supabase.from("files").insert({id:name,content:"",updated_at:new Date()}).then(loadFiles);
+    };
+  </script>
+</body>
+</html>
+
